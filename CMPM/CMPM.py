@@ -35,7 +35,10 @@ def modify_excel_file():
         
         # Show available months and ask user
         print("\nAvailable months:", month_columns)
-        month_to_keep = input("Which month would you like to keep? (e.g., Jan, Feb, etc.): ").strip()
+        month_input = input("Which month would you like to keep? (e.g., Jan, Feb, etc.): ").strip()
+        
+        # Convert input to title case (first letter capital, rest lowercase) for consistency
+        month_to_keep = month_input.title()
         
         if month_to_keep not in month_columns:
             raise ValueError(f"Invalid month. Please choose from {month_columns}")
@@ -132,7 +135,7 @@ def modify_excel_file():
         # Create pivot table
         pt = pc.CreatePivotTable(
             TableDestination="Summary!R3C1",
-            TableName="SummaryPivotTable",
+            TableName="SummaryPivotTable", 
             DefaultVersion=6
         )
         
@@ -142,21 +145,28 @@ def modify_excel_file():
             print(f"- {field.Name}")
         
         try:
-            # Add PMT Title as rows
-            pt.PivotFields("PMT Title").Orientation = 1  # xlRowField
+            # Add Application as filter
+            pt.PivotFields("Application").Orientation = 3  # xlPageField (Filter)
             
-            # Add the month as values
+            # Add Location and Employee as rows
+            pt.PivotFields("Location").Orientation = 1     # xlRowField
+            pt.PivotFields("Employee").Orientation = 1     # xlRowField
+            
+            # Add the month and Total Cost as values
             values_field = pt.PivotFields(month_to_keep)
-            values_field.Orientation = 4  # xlDataField
+            values_field.Orientation = 4  # xlDataField (Values)
             values_field.Function = -4157  # xlSum
             
-            # Add Total Cost as values
             total_cost_field = pt.PivotFields("Total Cost")
-            total_cost_field.Orientation = 4  # xlDataField
+            total_cost_field.Orientation = 4  # xlDataField (Values)
             total_cost_field.Function = -4157  # xlSum
             
         except Exception as e:
             print(f"\nError while configuring pivot fields: {str(e)}")
+            # Print available fields for debugging
+            print("\nAvailable fields in pivot table:")
+            for field in pt.PivotFields():
+                print(f"- {field.Name}")
             raise
 
         # Refresh the pivot table
