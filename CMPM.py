@@ -136,6 +136,16 @@ def modify_excel_file():
                         bottom=openpyxl.styles.Side(style='thin')
                     )
             
+            # Add thick border to header row (9th row)
+            header_range = worksheet[f'A9:{last_col}9']
+            for cell in header_range[0]:
+                cell.border = openpyxl.styles.Border(
+                    left=openpyxl.styles.Side(style='thin'),
+                    right=openpyxl.styles.Side(style='thin'),
+                    top=openpyxl.styles.Side(style='thick'),
+                    bottom=openpyxl.styles.Side(style='thick')
+                )
+            
             # Add thick border to subtotal row
             subtotal_range = worksheet[f'A{subtotal_row}:{last_col}{subtotal_row}']
             for cell in subtotal_range[0]:

@@ -35,22 +35,23 @@ def modify_excel_file():
         
         # Show available months and ask user
         print("\nAvailable months:", month_columns)
-        month_input = input("Which month would you like to keep? (e.g., Jan, Feb, etc.): ").strip()
+        month_input = input("Which months would you like to keep? (Enter comma-separated months, e.g., Jan, Feb, Mar): ").strip()
         
-        # Convert input to title case (first letter capital, rest lowercase) for consistency
-        month_to_keep = month_input.title()
+        # Split the input and clean each month
+        months_to_keep = [month.strip().title() for month in month_input.split(',')]
         
-        if month_to_keep not in month_columns:
-            raise ValueError(f"Invalid month. Please choose from {month_columns}")
+        # Validate all months
+        invalid_months = [month for month in months_to_keep if month not in month_columns]
+        if invalid_months:
+            raise ValueError(f"Invalid month(s): {invalid_months}. Please choose from {month_columns}")
         
-        print(f"\nUsing month column: {month_to_keep}")
+        print(f"\nUsing month columns: {months_to_keep}")
         
         # Keep only specified columns
         base_columns = [
             'PMT Title', 'Cost Center', 'Application',
-            'Resource ATTUID',
-            month_to_keep
-        ]
+            'Resource ATTUID'
+        ] + months_to_keep
         filtered_data = filtered_data[base_columns]
         
         # Save to new Excel file
@@ -63,7 +64,7 @@ def modify_excel_file():
             
             # Create modified header row with new columns
             header_indices = [header_row.index(col) for col in base_columns]
-            modified_header = [header_row[i] for i in header_indices] + ['Rate', 'Total Cost', 'Location', 'Employee']
+            modified_header = [header_row[i] for i in header_indices] + ['Rate'] + [f'{month} TC' for month in months_to_keep] + ['Location', 'Employee']
             
             # Write the modified header row (9th row)
             pd.DataFrame([modified_header]).to_excel(
@@ -81,32 +82,51 @@ def modify_excel_file():
             workbook = writer.book
             worksheet = writer.sheets['Modified Data']
             
-            # Calculate column positions and add formulas
+            # Calculate column positions
             base_col_count = len(base_columns)
-            month_col = openpyxl.utils.get_column_letter(base_columns.index(month_to_keep) + 1)
             rate_col = openpyxl.utils.get_column_letter(base_col_count + 1)
-            total_cost_col = openpyxl.utils.get_column_letter(base_col_count + 2)
             
-            # Define last_col here
-            last_col = openpyxl.utils.get_column_letter(len(modified_header))
+            # Add Rate column header
+            worksheet[f'{rate_col}9'] = 'Rate'
             
-            # Add formulas for Total Cost
-            for row in range(10, 10 + len(filtered_data)):
-                worksheet[f'{total_cost_col}{row}'] = f'={month_col}{row}*{rate_col}{row}'
+            # Add individual total cost columns for each month
+            current_col = base_col_count + 2
+            total_cost_cols = {}
+            
+            for month in months_to_keep:
+                col_letter = openpyxl.utils.get_column_letter(current_col)
+                total_cost_cols[month] = col_letter
+                worksheet[f'{col_letter}9'] = f'{month} TC'  # Header for total cost column
+                month_col = openpyxl.utils.get_column_letter(base_columns.index(month) + 1)
+                
+                # Add formulas for Total Cost for each month
+                for row in range(10, 10 + len(filtered_data)):
+                    worksheet[f'{col_letter}{row}'] = f'={month_col}{row}*{rate_col}{row}'
+                
+                current_col += 1
             
             # Add subtotal row
             last_row = 9 + len(filtered_data)
             subtotal_row = last_row + 1
             
-            # Add "Subtotal" label and formulas
-            worksheet[f'A{subtotal_row}'] = 'Subtotal'
-            worksheet[f'{month_col}{subtotal_row}'] = f'=SUBTOTAL(9,{month_col}10:{month_col}{last_row})'
-            worksheet[f'{total_cost_col}{subtotal_row}'] = f'=SUBTOTAL(9,{total_cost_col}10:{total_cost_col}{last_row})'
-
+            # Add subtotals for each month's hours and total cost without the "Subtotal" label
+            worksheet[f'A{subtotal_row}'] = ''  # Empty cell instead of "Subtotal"
+            
+            # Add subtotals for each month's hours and total cost
+            for month in months_to_keep:
+                # Subtotal for month hours
+                month_col = openpyxl.utils.get_column_letter(base_columns.index(month) + 1)
+                worksheet[f'{month_col}{subtotal_row}'] = f'=SUBTOTAL(9,{month_col}10:{month_col}{last_row})'
+                
+                # Subtotal for month's total cost
+                tc_col = total_cost_cols[month]
+                worksheet[f'{tc_col}{subtotal_row}'] = f'=SUBTOTAL(9,{tc_col}10:{tc_col}{last_row})'
+            
             # Add borders to Modified Data sheet
+            last_col = openpyxl.utils.get_column_letter(len(modified_header))
             data_range = worksheet[f'A9:{last_col}{subtotal_row}']
             
-            # Add borders to all cells in the range
+            # Add thin borders to all cells in the range
             for row in data_range:
                 for cell in row:
                     cell.border = openpyxl.styles.Border(
@@ -116,22 +136,46 @@ def modify_excel_file():
                         bottom=openpyxl.styles.Side(style='thin')
                     )
             
-            # Add thick border around the entire table
-            for row in range(9, subtotal_row + 1):
-                # Left border
-                worksheet[f'A{row}'].border = openpyxl.styles.Border(
-                    left=openpyxl.styles.Side(style='thick'),
-                    right=worksheet[f'A{row}'].border.right,
-                    top=worksheet[f'A{row}'].border.top,
-                    bottom=worksheet[f'A{row}'].border.bottom
+            # Add thick border to header row (9th row)
+            header_range = worksheet[f'A9:{last_col}9']
+            for cell in header_range[0]:
+                cell.border = openpyxl.styles.Border(
+                    left=openpyxl.styles.Side(style='thin'),
+                    right=openpyxl.styles.Side(style='thin'),
+                    top=openpyxl.styles.Side(style='thick'),
+                    bottom=openpyxl.styles.Side(style='thick')
                 )
-                # Right border
-                worksheet[f'{last_col}{row}'].border = openpyxl.styles.Border(
-                    left=worksheet[f'{last_col}{row}'].border.left,
-                    right=openpyxl.styles.Side(style='thick'),
-                    top=worksheet[f'{last_col}{row}'].border.top,
-                    bottom=worksheet[f'{last_col}{row}'].border.bottom
+            
+            # Add thick border to subtotal row
+            subtotal_range = worksheet[f'A{subtotal_row}:{last_col}{subtotal_row}']
+            for cell in subtotal_range[0]:
+                cell.border = openpyxl.styles.Border(
+                    left=openpyxl.styles.Side(style='thin'),
+                    right=openpyxl.styles.Side(style='thin'),
+                    top=openpyxl.styles.Side(style='thick'),
+                    bottom=openpyxl.styles.Side(style='thick')
                 )
+            
+            # Add thick outside border to the entire table
+            data_range = worksheet[f'A9:{last_col}{subtotal_row}']
+            for row in data_range:
+                for cell in row:
+                    # Get current cell borders
+                    current_border = cell.border
+                    
+                    # Determine if cell is on an edge
+                    is_left_edge = cell.column == 1  # Column A
+                    is_right_edge = cell.column == len(modified_header)
+                    is_top_edge = cell.row == 9
+                    is_bottom_edge = cell.row == subtotal_row
+                    
+                    # Create new border keeping internal borders thin and making outer borders thick
+                    cell.border = openpyxl.styles.Border(
+                        left=openpyxl.styles.Side(style='thick' if is_left_edge else 'thin'),
+                        right=openpyxl.styles.Side(style='thick' if is_right_edge else 'thin'),
+                        top=openpyxl.styles.Side(style='thick' if is_top_edge else current_border.top.style),
+                        bottom=openpyxl.styles.Side(style='thick' if is_bottom_edge else current_border.bottom.style)
+                    )
             
             # Top border
             for col in range(1, len(modified_header) + 1):
@@ -174,71 +218,67 @@ def modify_excel_file():
         # Important: Start from row 9 to include only the actual header and data
         data_range = ws.Range(f"A9:{last_col}{last_row}")
         
-        # Create pivot cache with explicit header row
+        # Create pivot cache
+        ws = wb.Worksheets("Modified Data")
+        data_range = ws.Range(f"A9:{last_col}{last_row}")
         pc = wb.PivotCaches().Create(
-            SourceType=1,
+            SourceType=1,  # xlDatabase = 1
             SourceData=data_range,
             Version=6
         )
         
-        # Create new sheet for pivot table
-        pt_sheet = wb.Worksheets.Add()
-        pt_sheet.Name = "Summary"
-        
-        # Create pivot table
-        pt = pc.CreatePivotTable(
-            TableDestination="Summary!R3C1",
-            TableName="SummaryPivotTable", 
-            DefaultVersion=6
-        )
-        
-        # Debug: Print the actual field names
-        print("\nAvailable fields in pivot table:")
-        for field in pt.PivotFields():
-            print(f"- {field.Name}")
-        
         try:
-            # Add Application as filter
-            pt.PivotFields("Application").Orientation = 3  # xlPageField (Filter)
+            # Create new sheet for pivot table
+            pt_sheet = wb.Worksheets.Add()
+            pt_sheet.Name = "Pivot Table"
             
-            # Add Location and Employee as rows
-            pt.PivotFields("Location").Orientation = 1     # xlRowField
-            pt.PivotFields("Employee").Orientation = 1     # xlRowField
+            # Create pivot table
+            pt = pc.CreatePivotTable(
+                TableDestination=pt_sheet.Range("A3"),
+                TableName="PivotTable1"
+            )
             
-            # Add the month and Total Cost as values
-            values_field = pt.PivotFields(month_to_keep)
-            values_field.Orientation = 4  # xlDataField (Values)
-            values_field.Function = -4157  # xlSum
-            
-            total_cost_field = pt.PivotFields("Total Cost")
-            total_cost_field.Orientation = 4  # xlDataField (Values)
-            total_cost_field.Function = -4157  # xlSum
-            
-        except Exception as e:
-            print(f"\nError while configuring pivot fields: {str(e)}")
-            # Print available fields for debugging
+            # Debug print available fields
             print("\nAvailable fields in pivot table:")
             for field in pt.PivotFields():
                 print(f"- {field.Name}")
-            raise
-
-        # Refresh the pivot table
-        pt.RefreshTable()
-        
-        # Add borders to Summary sheet pivot table
-        try:
-            pt_sheet = wb.Worksheets("Summary")
+            
+            # Add fields to pivot table
+            pt.PivotFields("Cost Center").Orientation = 1  # xlRowField = 1
+            pt.PivotFields("Location").Orientation = 1     # xlRowField = 1
+            pt.PivotFields("Employee").Orientation = 1     # xlRowField = 1
+            
+            # Add only the total cost columns for each month
+            for month in months_to_keep:
+                tc_field_name = f"{month} TC"
+                print(f"Adding field: {tc_field_name}")
+                tc_field = pt.PivotFields(tc_field_name)
+                tc_field.Orientation = 4      # xlDataField = 4
+                tc_field.Function = -4157     # xlSum = -4157
+            
+            # Refresh the pivot table
+            pt.RefreshTable()
+            
+            # Add borders to Pivot Table sheet pivot table
             pt_range = pt.TableRange2
             
             # Add borders to all cells
-            pt_range.Borders.LineStyle = 1  # xlContinuous
-            pt_range.Borders.Weight = 2     # xlThin
+            pt_range.Borders.LineStyle = 1  # xlContinuous = 1
+            pt_range.Borders.Weight = 2     # xlThin = 2
             
-            # Add thick outside borders
-            pt_range.BorderAround(LineStyle=1, Weight=4)  # Weight=4 for thick border
-            
+            # Add thick outside border
+            pt_range.BorderAround(LineStyle=1, Weight=4)  # xlThick = 4
+                
         except Exception as e:
-            print(f"Error adding borders to pivot table: {str(e)}")
+            print(f"Error creating pivot table: {str(e)}")
+            # Print available fields for debugging
+            try:
+                print("\nAvailable fields in pivot table:")
+                for field in pt.PivotFields():
+                    print(f"- {field.Name}")
+            except:
+                pass
+            raise
 
         # Save and close properly
         wb.Save()
@@ -263,4 +303,4 @@ def modify_excel_file():
         time.sleep(1)
 
 if __name__ == "__main__":
-    modify_excel_file() 
+    modify_excel_file()
